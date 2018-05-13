@@ -4,6 +4,8 @@ import Link from 'next/link'
 import fetch from 'isomorphic-unfetch'
 import Dropzone from '../components/FullScreenDropzone'
 import React from 'react'
+import download from '../lib/download'
+import serialiseSankeyData from '../lib/serialiseSankeyData'
 
 import { sankey } from 'd3-sankey-diagram'
 
@@ -28,8 +30,8 @@ class Index extends React.Component {
     this.newData(this.state.sankeyData)
   }
 
-  getLayout () {
-    const {width, height, scale} = this.state
+  getLayout (state = this.state) {
+    const {width, height, scale} = state
 
     return sankey()
       .size([width - margin.left - margin.right, height - margin.top - margin.bottom])
@@ -38,20 +40,26 @@ class Index extends React.Component {
   }
 
   newData (data) {
+    let {width, height, scale} = this.state
+
     if (data.dimensions) {
-      this.setState({
-        width: data.dimensions.pageWidth,
-        height: data.dimensions.pageHeight
-      })
+      width = data.dimensions.pageWidth
+      height = data.dimensions.pageHeight
     }
 
-    const {width, height, scale} = this.state
+    const s = data.metadata ? data.metadata.scale : scale
+    if (s > 0 && isFinite(s)) {
+      scale = s
+    }
+
+    const layout = this.getLayout({ width, height, scale })
+
     if (data && data.nodes.length > 0) {
-      if (data.nodes[0].x0 !== undefined) {
+      if (data.nodes[0].geometry !== undefined) {
         // Don't need to calculate layout
         console.log('not calculating layout', data.nodes[0])
-        // this.layout.nodePosition(d => [d.x0, d.y0])
-        // const result = this.layout(data)
+        layout.nodePosition(d => [d.geometry.x, d.geometry.y])
+        const result = layout(data)
       } else {
         // Do need to calculate layout
         console.log('calculating layout', data.nodes.length, data.nodes[0].y0)
@@ -61,10 +69,9 @@ class Index extends React.Component {
         //   .linkValue(d => d.data.value)
         /* .nodePosition(function (d) { return [margin.left + d.x, margin.top + d.y] })*/
 
-        const layout = this.getLayout()
         const result = layout(data)
         console.log('after layout', data.nodes.length, result.nodes.length, data.nodes[0].y0)
-        this.setState({scale: layout.scale()})
+        scale = layout.scale()
         // this.layout.nodePosition(d => [d.x0, d.y0])
         /* 
          *       data.nodes.forEach(d => {
@@ -75,6 +82,9 @@ class Index extends React.Component {
     }
 
     this.setState({
+      width: width,
+      height: height,
+      scale: scale,
       sankeyData: data
     })
   }
@@ -109,6 +119,11 @@ class Index extends React.Component {
     this.setState({ sankeyData: this.state.sankeyData })
   }
 
+  onDownload (d) {
+    const jsonData = serialiseSankeyData(this.state.sankeyData, this.state.scale)
+    download(jsonData, 'sankey.json')
+  }
+
   render () {
     const { width, height, scale } = this.state
 
@@ -120,6 +135,7 @@ class Index extends React.Component {
           <input type="number" onChange={this.onHeightChanged.bind(this)} value={height}/>
           <button onClick={this.onRelayout.bind(this)}>Re-layout</button>
           <input type="number" onChange={this.onScaleChanged.bind(this)} min="0" value={scale || ''}/>
+          <button onClick={this.onDownload.bind(this)}>Download JSON</button>
           <Sankey width={width} height={height} data={this.state.sankeyData} onDragEnd={this.onDragEnd.bind(this)}/>
         </Dropzone>
       </Layout>
