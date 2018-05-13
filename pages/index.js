@@ -2,66 +2,133 @@ import Layout from '../components/MyLayout'
 import Sankey from '../components/Sankey'
 import Link from 'next/link'
 import fetch from 'isomorphic-unfetch'
-import Dropzone from 'react-dropzone'
+import Dropzone from '../components/FullScreenDropzone'
 import React from 'react'
 
-export default class Index extends React.Component {
+import { sankey } from 'd3-sankey-diagram'
+
+import initialData from '../quickstart.json'
+console.log('initialData', initialData)
+const margin = { top: 10, left: 100, bottom: 10, right: 100 }
+
+class Index extends React.Component {
   constructor (props) {
     super(props)
-    this.state = {sankeyData: null}
+    console.log('props', props)
+    this.state = {
+      sankeyData: props.initialData,
+      width: 1000,
+      height: 600,
+      scale: null
+    }
+    // this.newData(props.initialData)
   }
 
-  handleDrop (acceptedFiles, rejectedFiles) {
-    if (acceptedFiles.length >= 1) {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const sankeyData = JSON.parse(reader.result)
-        // do whatever you want with the file content
-        console.log('loaded data', sankeyData, this)
-        this.setState({ sankeyData: sankeyData })
-      }
-      reader.onabort = () => console.log('file reading was aborted')
-      reader.onerror = () => console.log('file reading has failed')
-      reader.readAsBinaryString(acceptedFiles[0])
+  componentDidMount() {
+    this.newData(this.state.sankeyData)
+  }
+
+  getLayout () {
+    const {width, height, scale} = this.state
+
+    return sankey()
+      .size([width - margin.left - margin.right, height - margin.top - margin.bottom])
+      .scale(scale)
+      .linkValue(d => d.data.value)
+  }
+
+  newData (data) {
+    if (data.dimensions) {
+      this.setState({
+        width: data.dimensions.pageWidth,
+        height: data.dimensions.pageHeight
+      })
     }
+
+    const {width, height, scale} = this.state
+    if (data && data.nodes.length > 0) {
+      if (data.nodes[0].x0 !== undefined) {
+        // Don't need to calculate layout
+        console.log('not calculating layout', data.nodes[0])
+        // this.layout.nodePosition(d => [d.x0, d.y0])
+        // const result = this.layout(data)
+      } else {
+        // Do need to calculate layout
+        console.log('calculating layout', data.nodes.length, data.nodes[0].y0)
+        // const layout = sankey()
+        //   .size([width - margin.left - margin.right, height - margin.top - margin.bottom])
+        //   .scale(scale)
+        //   .linkValue(d => d.data.value)
+        /* .nodePosition(function (d) { return [margin.left + d.x, margin.top + d.y] })*/
+
+        const layout = this.getLayout()
+        const result = layout(data)
+        console.log('after layout', data.nodes.length, result.nodes.length, data.nodes[0].y0)
+        this.setState({scale: layout.scale()})
+        // this.layout.nodePosition(d => [d.x0, d.y0])
+        /* 
+         *       data.nodes.forEach(d => {
+         *         d.x = d.x0
+         *         d.y = d.y0
+         *       })*/
+      }
+    }
+
+    this.setState({
+      sankeyData: data
+    })
+  }
+
+  onWidthChanged (event) {
+    this.setState({ width: event.target.value })
+  }
+
+  onHeightChanged (event) {
+    this.setState({ height: event.target.value })
+  }
+
+  onScaleChanged (event) {
+    const scale = event.target.valueAsNumber
+    const layout = this.getLayout()
+          .scale(scale)
+          .nodePosition(d => [d.x0, d.y0])
+
+    layout(this.state.sankeyData)
+    this.setState({ sankeyData: this.state.sankeyData, scale: scale })
+  }
+
+  onRelayout (event) {
+    const layout = this.getLayout()
+    layout(this.state.sankeyData)
+    this.setState({ sankeyData: this.state.sankeyData })
+  }
+
+  onDragEnd (d) {
+    const layout = this.getLayout()
+    layout.update(this.state.sankeyData)
+    this.setState({ sankeyData: this.state.sankeyData })
   }
 
   render () {
-    const styles = { border: '1px solid black', width: 600, color: 'black', padding: 20 }
-    console.log('render', this.state)
+    const { width, height, scale } = this.state
 
     return (
       <Layout>
-        <h1>Sankey editor</h1>
-        <div id="react-file-drop-demo" style={{styles}}>
-        <Dropzone onDrop={this.handleDrop.bind(this)}>
-            Drop some files here!
-          </Dropzone>
-        <Sankey data={this.state.sankeyData} width={1000} height={500}/>
-        </div>
+        <Dropzone onData={this.newData.bind(this)}>
+          <h1>Sankey editor</h1>
+          <input type="number" onChange={this.onWidthChanged.bind(this)} value={width}/>
+          <input type="number" onChange={this.onHeightChanged.bind(this)} value={height}/>
+          <button onClick={this.onRelayout.bind(this)}>Re-layout</button>
+          <input type="number" onChange={this.onScaleChanged.bind(this)} min="0" value={scale || ''}/>
+          <Sankey width={width} height={height} data={this.state.sankeyData} onDragEnd={this.onDragEnd.bind(this)}/>
+        </Dropzone>
       </Layout>
     )
   }
-    // <ul>
-    //   {props.shows.map(({show}) => (
-    //     <li key={show.id}>
-    //       <Link as={`/p/${show.id}`} href={`/post?id=${show.id}`}>
-    //         <a>{show.name}</a>
-    //       </Link>
-    //     </li>
-    //   ))}
-    // </ul>
 }
 
-// Index.getInitialProps = async function () {
-//   const res = await fetch('https://api.tvmaze.com/search/shows?q=batman')
-//   const data = await res.json()
+Index.getInitialProps = function () {
+  return { initialData: initialData }
+}
 
-//   console.log(`Show data fetched. Count: ${data.length}`)
-
-//   return {
-//     shows: data
-//   }
-// }
-
-// export default Index
+export default Index
